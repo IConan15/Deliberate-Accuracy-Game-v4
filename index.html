@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deliberate Accuracy v4.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Inter font for a modern aesthetic */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; /* Dark background (gray-800) */
+            color: #f3f4f6; /* Default text color */
+            user-select: none; /* Prevent accidental text selection */
+        }
+        /* Canvas Styling: Enforced 2:1 Aspect Ratio for consistent geometry math */
+        #gameCanvas {
+            border: 2px solid #111827; /* gray-700 border */
+            background-color: #1f2937; /* Dark background for canvas */
+            touch-action: manipulation; /* Improves touch responsiveness */
+            width: 95%; /* Takes almost full container width */
+            height: auto; 
+            aspect-ratio: 2 / 1; /* Maintains the 2:1 proportion */
+            display: block;
+        }
+        /* Smooth transition for the progress bar */
+        .progress-bar-fill {
+            transition: width 0.5s ease-out, background-color 0.5s ease-out;
+        }
+        /* Main container scaling */
+        #app {
+            max-height: 98vh; 
+            min-height: 600px; 
+        }
+
+        /* --- Custom Modal Styling (for instructions) --- */
+        .modal-overlay {
+            /* Fixed to viewport for general instructions modal */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.85); 
+            z-index: 1000; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow-y: auto; 
+        }
+        
+        /* IMPORTANT: Ensure hidden works correctly */
+        .hidden {
+            display: none !important;
+        }
+
+        /* --- Custom Lightbox Styling for Zoomed Image --- */
+        #imageLightbox {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.95); /* Darker overlay for focus */
+            z-index: 1001; /* Must be higher than infoModal */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            cursor: zoom-out; /* Hint that clicking closes it */
+        }
+        #imageLightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain; /* Ensures the image fits without cropping */
+            display: block;
+        }
+        /* End Custom Styling */
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen w-screen p-2 md:p-4 overflow-hidden">
+
+    <div id="app" class="bg-gray-900 shadow-2xl rounded-xl p-4 md:p-6 w-full max-w-6xl flex flex-col relative">
+        
+        <button id="infoButton" 
+                class="absolute top-0 right-0 mt-2 mr-2 md:mt-4 md:mr-4 
+                        bg-indigo-600 hover:bg-indigo-700 text-white 
+                        font-bold w-8 h-8 rounded-full shadow-lg 
+                        flex items-center justify-center text-lg 
+                        transition duration-300 transform hover:scale-110 
+                        z-50"
+                title="Show Instructions">
+            ?
+        </button>
+
+        <div class="flex flex-col lg:flex-row justify-between lg:space-x-4 mb-3 flex-shrink-0">
+            
+            <div class="flex flex-col md:flex-row flex-wrap justify-center items-center space-y-2 md:space-y-0 md:space-x-4 p-2 bg-gray-800 rounded-lg shadow-inner flex-shrink-0 lg:w-3/4">
+                <label for="numPointsSelect" class="text-gray-100 font-semibold text-sm md:text-base">Number of Points:</label>
+                <select id="numPointsSelect" class="p-2 border border-gray-600 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm md:text-base bg-gray-900 text-white">
+                    <option value="2">2 Points (Line Segment)</option>
+                    <option value="3">3 Points (Triangle)</option>
+                    <option value="4" selected>4 Points (Quadrilateral)</option>
+                    <option value="5">5 Points (Pentagon)</option>
+                    <option value="6">6 Points (Hexagon)</option>
+                    <option value="7">7 Points (Heptagon)</option>
+                </select>
+
+                <div class="flex items-center space-x-2">
+                    <input type="checkbox" id="mirrorModeCheckbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="mirrorModeCheckbox" class="text-gray-100 font-semibold text-sm md:text-base">Mirror Mode</label>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <input type="checkbox" id="absoluteModeCheckbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="absoluteModeCheckbox" class="text-gray-100 font-semibold text-sm md:text-base">Absolute Position Mode</label>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <input type="checkbox" id="memoryModeCheckbox" class="h-4 w-4 text-pink-500 border-gray-300 rounded focus:ring-pink-500">
+                    <label for="memoryModeCheckbox" class="text-gray-100 font-semibold text-sm md:text-base">Memory Mode</label>
+                </div>
+                
+                <button id="startButton"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded-full shadow-lg transition duration-300 transform hover:scale-105 text-sm md:text-base active:bg-indigo-800">
+                    Start Round
+                </button>
+            </div>
+
+            <div id="stats-panel" class="bg-gray-800 rounded-xl p-3 shadow-2xl mt-3 lg:mt-0 lg:w-1/4 min-w-[200px]">
+                <div class="text-sm font-semibold mb-1 text-gray-200">
+                    Overall Average: (<span id="attempts-count">0 Attempts</span>)
+                </div>
+                <div id="average-percentage" class="text-3xl font-bold text-center mb-1 text-white">
+                    N/A
+                </div>
+                <div class="w-full bg-gray-600 rounded-full h-2">
+                    <div id="progress-bar-fill" class="progress-bar-fill h-2 rounded-full" style="width: 0%; background-color: #fcd34d;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col items-center flex-grow min-h-0 w-full">
+            <div id="canvas-container" class="relative flex justify-center items-center w-full">
+                <canvas id="gameCanvas" class="rounded-lg shadow-inner"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="infoModal" class="modal-overlay hidden">
+        <div class="modal-content bg-gray-800 p-8 rounded-lg shadow-2xl relative border border-gray-700 max-w-xl">
+            <button id="closeModalButton" 
+                    class="absolute top-2 right-2 text-gray-400 hover:text-white text-3xl font-bold p-2 transition duration-300 leading-none"
+                    style="line-height: 1;">
+                &times;
+            </button>
+            
+            <h2 class="text-2xl font-bold text-indigo-400 mb-4">Deliberate Accuracy v4.1</h2>
+            
+            <p class="text-gray-300 mb-6">
+                This game involves copying a Target Shape from the left to the right Copy Area. All modes can be combined to increase the challenge, and your accuracy is measured by the total distance error.
+            </p>
+            
+            <div class="space-y-4">
+                <h3 class="text-xl font-semibold text-gray-200 border-b border-gray-700 pb-1">CORE MODES</h3>
+                <ul class="list-disc list-inside ml-4 space-y-2 text-gray-300">
+                    <li> Default Mode (Relative/Vector): Match the internal shape and proportions. White Dot(left side) anchors the shape, ignoring overall positional errors.</li>
+                    <li> Absolute Position Mode: Match the exact absolute location and shape (translated or mirrored) onto the right side.</li>
+                </ul>
+
+                <h3 class="text-xl font-semibold text-gray-200 border-b border-gray-700 pb-1 pt-2">CHALLENGE MODES</h3>
+                <ul class="list-disc list-inside ml-4 space-y-2 text-gray-300">
+                    <li> Mirror Mode: Requires you to create a horizontal reflection (a mirror image) of the Target Shape across the center line.</li>
+                    <li> Memory Mode: The Target Shape on the left disappears after 2 seconds, forcing you to reproduce the pattern based purely on visual memory. The Copy Area is masked for the first 3 seconds to enforce memorization.</li>
+</ul>
+            </div>
+            
+            <p class="text-yellow-400 font-bold mt-6 text-lg">
+               Press 'Next Pattern' to apply mode changes.
+            </p>
+            </div>
+        </div>
+
+    <script>
+        // --- Game Constants ---
+        const CANVAS_WIDTH = 1080;
+        const CANVAS_HEIGHT = 540;
+        const HALF_WIDTH = CANVAS_WIDTH / 2;
+        const POINT_RADIUS = 3; 
+        const MIN_RADIUS = 50; 
+        const MAX_RADIUS = 120; 
+        const MAX_DISTORTION = 40; 
+        const TARGET_VISIBILITY_MS = 2000;
+        const COPY_AREA_MASK_MS = 3000;
+        const COLOR_MASK = '#111827';
+        const COLOR_TARGET_DEFAULT = '#10b981';
+        const COLOR_TARGET_REFERENCE = '#f5fcfa';
+        const COLOR_DIVIDER = '#9ca3af';
+        const MAX_ERROR_TO_DISPLAY = 100;
+        const ERROR_FOR_FAILED_ATTEMPT = 200;
+        
+        // --- NEW/MODIFIED COLOR CONSTANTS ---
+        // Color for user lines while in progress (SEMI-TRANSPARENT RED)
+        const COLOR_USER_LINES_PROGRESS = 'rgba(0, 0, 0, 0.0)'; // Changed! (Invisible)
+        // Color for user points while in progress (YELLOW)
+        const COLOR_USER_POINTS_PROGRESS = '#bddeff'; 
+        // Color for user lines upon finishing the shape (original BLUE)
+        const COLOR_USER_LINES_FINAL = '#bddeff'; 
+        // Color for user points upon finishing the shape (ORANGE)
+        const COLOR_USER_POINTS_FINAL = '#c7e4f2'; 
+
+        // --- Game State ---
+        let NUM_POINTS = 4;
+        let targetPoints = [];
+        let userClicks = []; 
+        let isGameActive = false;
+        let isMirrorMode = false; 
+        let isAbsoluteMode = false;
+        let isMemoryMode = false; 
+        let isTargetVisible = true;
+        let isCopyAreaMasked = false;
+        let results = [];
+
+        // --- DOM Elements ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const numPointsSelect = document.getElementById('numPointsSelect');
+        const mirrorModeCheckbox = document.getElementById('mirrorModeCheckbox');
+        const absoluteModeCheckbox = document.getElementById('absoluteModeCheckbox');
+        const memoryModeCheckbox = document.getElementById('memoryModeCheckbox');
+        const startButton = document.getElementById('startButton');
+        
+        // Stats
+        const attemptsCountEl = document.getElementById('attempts-count');
+        const averagePercentageEl = document.getElementById('average-percentage');
+        const progressBarFillEl = document.getElementById('progress-bar-fill');
+        
+        // Modal Elements
+        const infoButton = document.getElementById('infoButton');
+        const infoModal = document.getElementById('infoModal');
+        const closeModalButton = document.getElementById('closeModalButton');
+        
+        // Lightbox Elements
+        const zoomImageButton = document.getElementById('zoomImageButton');
+        const imageLightbox = document.getElementById('imageLightbox');
+        
+        // Initial Canvas Setup (Crucial for drawing context)
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        /**
+         * Generates N distorted points for the target pattern, centered on the left half.
+         */
+        function generateTargetPoints() {
+            let tempPoints = [];
+            const N = NUM_POINTS;
+            
+            // 1. Define shape parameters
+            const radius = Math.random() * (MAX_RADIUS - MIN_RADIUS) + MIN_RADIUS;
+            
+            // Center adjusted for the left half:
+            const centerX = HALF_WIDTH / 2;    
+            const centerY = CANVAS_HEIGHT / 2;    
+            
+            // Random start angle for rotation
+            const startAngle = Math.random() * 2 * Math.PI;    
+            
+            // Special handling for 2 points (straight line segment) vs. 3+ points (polygon)
+            const angleIncrement = (N === 2) ? Math.PI : (2 * Math.PI) / N;
+
+            // 2. Generate points and apply distortion
+            for (let i = 0; i < N; i++) {
+                const angle = startAngle + i * angleIncrement;
+                
+                const idealX = centerX + radius * Math.cos(angle);
+                const idealY = centerY + radius * Math.sin(angle);
+                
+                const distortionX = (Math.random() - 0.5) * MAX_DISTORTION;
+                const distortionY = (Math.random() - 0.5) * MAX_DISTORTION;
+                
+                tempPoints.push({    
+                    x: Math.round(idealX + distortionX),    
+                    y: Math.round(idealY + distortionY)    
+                });
+            }
+
+            // 3. Reorder: Identify P1 as the point closest to (0,0) (arbitrary but consistent reference for P1)
+            let closestIndex = 0;
+            let minDistanceSquared = Infinity;
+
+            for (let i = 0; i < tempPoints.length; i++) {
+                const p = tempPoints[i];
+                // Distance to origin (0,0)
+                const distanceSquared = p.x * p.x + p.y * p.y;    
+
+                if (distanceSquared < minDistanceSquared) {
+                    minDistanceSquared = distanceSquared;
+                    closestIndex = i;
+                }
+            }
+
+            // 4. Create the final array, cyclically reordered starting from P1
+            const newOrder = [];
+            for (let i = 0; i < N; i++) {
+                const originalIndex = (closestIndex + i) % N;    
+                newOrder.push(tempPoints[originalIndex]);
+            }
+
+            targetPoints = newOrder;
+        }
+
+        /**
+         * Draws a single point on the canvas.
+         */
+        function drawPoint(x, y, color, isComparison, isReference) {
+            
+            let drawColor = isReference ? COLOR_TARGET_REFERENCE : color;    
+            const radius = isComparison ? 2 : POINT_RADIUS;    
+            
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = drawColor;
+            ctx.fill();
+        }
+        
+        /**
+         * Draws the lines connecting the points.
+         */
+        function drawLines(points, color, isDashed = false) {
+            if (points.length < 2) return;
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.7;    
+
+            if (isDashed) {
+                ctx.setLineDash([5, 5]);
+            } else {
+                ctx.setLineDash([]);
+            }
+            
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.closePath();    
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;    
+            ctx.setLineDash([]); // Always reset
+        }
+
+        /**
+         * Main drawing function, executed on state change.
+         */
+        function draw() {
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // 1. Draw the central divider line
+            drawLines([{ x: HALF_WIDTH, y: 0 }, { x: HALF_WIDTH, y: CANVAS_HEIGHT }], COLOR_DIVIDER, true);
+
+            // 2. Determine visibility of the target pattern (Left Half)
+            const shouldDrawTarget = !isGameActive || !isMemoryMode || isTargetVisible;
+            
+            if (shouldDrawTarget && targetPoints.length > 0) {
+                drawLines(targetPoints, COLOR_TARGET_DEFAULT);
+                targetPoints.forEach((p, index) => {
+                    // Target points (P1 is drawn in a brighter color for reference)
+                    
+                    // --- MODIFICATION START ---
+                    // Hide the white reference point (index 0) if Absolute Mode is active.
+                    const isReferencePoint = index === 0;
+                    const shouldDrawReference = isReferencePoint && !isAbsoluteMode;
+                    
+                    if (isReferencePoint && shouldDrawReference) {
+                        drawPoint(p.x, p.y, COLOR_TARGET_DEFAULT, false, true); // Draw P1 as reference
+                    } else if (!isReferencePoint) {
+                        drawPoint(p.x, p.y, COLOR_TARGET_DEFAULT, false, false); // Draw P2, P3, etc., normally
+                    } else if (isAbsoluteMode && isReferencePoint) {
+                         // Draw P1 normally if in Absolute Mode (no special white color)
+                         drawPoint(p.x, p.y, COLOR_TARGET_DEFAULT, false, false); 
+                    }
+                    // --- MODIFICATION END ---
+                });
+            }
+
+            // 3. COPY AREA MASK in Memory Mode (Right Half)
+            const isAreaMasked = isGameActive && isMemoryMode && isCopyAreaMasked;
+            if (isAreaMasked) {
+                // Draw an opaque rectangle over the copy area
+                ctx.fillStyle = COLOR_MASK;    
+                ctx.fillRect(HALF_WIDTH, 0, HALF_WIDTH, CANVAS_HEIGHT);    
+                
+                // Wait/Memorize message (optional, but good visual feedback)
+                ctx.fillStyle = '#4b5563'; // gray-600
+                ctx.font = 'bold 36px Inter';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText("(´っ･ω･)っ", HALF_WIDTH + HALF_WIDTH / 2, CANVAS_HEIGHT / 2 - 30);
+                
+                ctx.font = '20px Inter';
+                ctx.fillText("...", HALF_WIDTH + HALF_WIDTH / 2, CANVAS_HEIGHT / 2 + 30);
+            }
+
+            // 4. Draw user clicks (only if the area is not masked)
+            if (!isAreaMasked) {
+                
+                // --- Conditional Color Logic for lines and points ---
+                let userLineColor;
+                let userPointColor;
+
+                if (isGameActive && userClicks.length < NUM_POINTS) {
+                    // Game active and incomplete points -> Transparent and Yellow
+                    userLineColor = COLOR_USER_LINES_PROGRESS;
+                    userPointColor = COLOR_USER_POINTS_PROGRESS;
+                } else {
+                    // Game inactive (round ended) or complete points -> Blue and Orange
+                    userLineColor = COLOR_USER_LINES_FINAL;
+                    userPointColor = COLOR_USER_POINTS_FINAL;
+                }
+                // ----------------------------------------------------
+                
+                // If the user has placed at least 2 points, draw the lines
+                if (userClicks.length >= 2) {
+                    
+                    let pointsToDraw = userClicks;
+                    // Only sort by angle if there are 3 or more points
+                    if (userClicks.length >= 3) {
+                        // 1. Calculate the centroid of the user's points
+                        let sumX = userClicks.reduce((sum, p) => sum + p.x, 0);
+                        let sumY = userClicks.reduce((sum, p) => sum + p.y, 0);
+                        const centroidX = sumX / userClicks.length;
+                        const centroidY = sumY / userClicks.length;
+
+                        // 2. Create a copy and sort the points by angle around the centroid
+                        pointsToDraw = [...userClicks].sort((a, b) => {
+                            // atan2 calculates the angle between the x-axis and the point
+                            const angleA = Math.atan2(a.y - centroidY, a.x - centroidX);
+                            const angleB = Math.atan2(b.y - centroidY, b.x - centroidX);
+                            return angleA - angleB; 
+                        });
+                    }
+
+                    // 3. Draw the user's lines (ordered or sequential)
+                    drawLines(pointsToDraw, userLineColor);
+                }
+                
+                // 4. Draw the individual points (always in the order they were clicked)
+                userClicks.forEach((p) => {
+                    drawPoint(p.x, p.y, userPointColor, false, false);
+                });
+            }
+
+            // 5. Draw comparison lines and user's final shape upon round end
+            if (!isGameActive && userClicks.length === NUM_POINTS) {
+                
+                // We use the shape calculated in endRound() which is already optimized for the best match
+                let shapeToVisualize = window.shapeToVisualizeForDraw || []; 
+
+                // Note: User lines were drawn before. Now we only draw the comparison Target.
+                
+                if (shapeToVisualize.length > 0) {
+                    // Draw the comparison target (lines)
+                    drawLines(shapeToVisualize, COLOR_TARGET_DEFAULT);
+
+                    // Draw the comparison target points (small points)
+                    shapeToVisualize.forEach((p) => {
+                        drawPoint(p.x, p.y, COLOR_TARGET_DEFAULT, true, false);
+                    });
+                }
+            }
+        }
+
+        /**
+         * Handles the click/tap event on the canvas.
+         */
+        function handleCanvasClick(event) {
+            const isMaskBlockingClicks = isGameActive && isMemoryMode && isCopyAreaMasked;
+            
+            if (!isGameActive || userClicks.length >= NUM_POINTS || isMaskBlockingClicks) return;
+
+            const rect = canvas.getBoundingClientRect();
+            // Calculate scale to map visual coordinates to internal canvas size (1080x540)
+            const scaleX = CANVAS_WIDTH / rect.width;
+            const scaleY = CANVAS_HEIGHT / rect.height;
+
+            const clickX = (event.clientX - rect.left) * scaleX;
+            const clickY = (event.clientY - rect.top) * scaleY;
+
+            // Constraint: Clicks MUST be in the right half (Copy Area).
+            if (clickX < HALF_WIDTH) {
+                return;    
+            }
+            
+            userClicks.push({ x: clickX, y: clickY });
+            
+            draw();
+
+            if (userClicks.length === NUM_POINTS) {
+                endRound();
+            }
+        }
+
+        /**
+         * Ends the round, calculates the score, and stores the result.
+         */
+        function endRound() {
+            isGameActive = false;
+            // The target should always be visible for review once the round ends.
+            isTargetVisible = true;
+            isCopyAreaMasked = false; // Ensure mask is removed immediately
+            
+            // startButton.disabled = false; // <-- REMOVED to keep it always enabled
+            startButton.textContent = 'Next Pattern';
+            
+            let totalErrorSquared = 0;
+            
+            // --- Error Calculation ---
+            if (userClicks.length !== NUM_POINTS) {
+                // Round ended without completing the required points
+                results.push({ error: ERROR_FOR_FAILED_ATTEMPT, timestamp: Date.now() });
+                updateOverallStats();
+                draw();
+                return;
+            }
+            
+            // STEP 1: ORDER USER POINTS BY ANGLE (ENSURING NO INTERTWINING)
+            let orderedUserClicks = userClicks;
+            if (NUM_POINTS >= 3) {
+                // Calculate centroid
+                let sumX = userClicks.reduce((sum, p) => sum + p.x, 0);
+                let sumY = userClicks.reduce((sum, p) => sum + p.y, 0);
+                const centroidX = sumX / userClicks.length;
+                const centroidY = sumY / userClicks.length;
+
+                // Clone and sort by angle
+                orderedUserClicks = [...userClicks].sort((a, b) => {
+                    const angleA = Math.atan2(a.y - centroidY, a.x - centroidX);
+                    const angleB = Math.atan2(b.y - centroidY, b.x - centroidX);
+                    return angleA - angleB;
+                });
+            }
+
+            // STEP 2: FIND THE BEST STARTING POINT (Match Alignment)
+            // This finds the rotation of the user's polygon that minimizes the total error against the target.
+            
+            let minError = Infinity;
+            let bestStartIndex = 0; // The index in orderedUserClicks that should match targetPoints[0] (P1)
+            
+            for (let startOffset = 0; startOffset < NUM_POINTS; startOffset++) {
+                let currentErrorSquared = 0;
+                
+                for (let i = 0; i < NUM_POINTS; i++) {
+                    const targetIndex = i;
+                    // The index of the user point to compare, cycled by the offset
+                    const userIndex = (startOffset + i) % NUM_POINTS; 
+                    
+                    const P_j = targetPoints[targetIndex];
+                    const U_i = orderedUserClicks[userIndex];
+                    
+                    
+                    if (isAbsoluteMode) {
+                        // ABSOLUTE MODE: Calculate the Absolute Target position
+                        const targetY = P_j.y;
+                        const targetX = isMirrorMode ? CANVAS_WIDTH - P_j.x : P_j.x + HALF_WIDTH;
+                        
+                        const dx = targetX - U_i.x;
+                        const dy = targetY - U_i.y;
+                        currentErrorSquared += (dx * dx + dy * dy);
+                        
+                    } else {
+                        // RELATIVE (VECTOR) MODE: Target Vector - User Vector
+                        
+                        // We will use P0 of the target and the corresponding U_i (based on startOffset)
+                        
+                        const P_REF = targetPoints[0];
+                        const U_REF = orderedUserClicks[startOffset]; // The alignment starting point
+                        
+                        // Target Vector (relative to P_REF)
+                        let vectorTargetX = P_j.x - P_REF.x;
+                        const vectorTargetY = P_j.y - P_REF.y;
+                        
+                        if (isMirrorMode) {
+                            vectorTargetX = -vectorTargetX;
+                        }
+
+                        // Ideal Target Position (aligned with U_REF)
+                        const idealX = U_REF.x + vectorTargetX;
+                        const idealY = U_REF.y + vectorTargetY;
+                        
+                        // Error: Distance between U_i and the Ideal Target Position
+                        const dx_rel = idealX - U_i.x;
+                        const dy_rel = idealY - U_i.y;
+                        
+                        currentErrorSquared += (dx_rel * dx_rel + dy_rel * dy_rel);
+                    }
+                }
+                
+                if (currentErrorSquared < minError) {
+                    minError = currentErrorSquared;
+                    bestStartIndex = startOffset; // Stores the best rotation
+                }
+            }
+            
+            // STEP 3: CALCULATE THE FINAL ERROR USING THE BEST STARTING POINT
+            totalErrorSquared = minError;
+
+            // 4. Determine the shape for the final visualization (ShapeToVisualize)
+            let shapeToVisualize = [];
+            
+            // Iterate through the Target and align it with the User's best starting point
+            for (let i = 0; i < NUM_POINTS; i++) {
+                const P_j = targetPoints[i];
+                // Note: We don't use U_i, only U_REF. U_i is used only for error calculation.
+                // U_REF is the user point that best aligns with P_REF (Target Point 0)
+                const U_REF = orderedUserClicks[bestStartIndex]; 
+                
+                if (isAbsoluteMode) {
+                    // Absolute Target Position (the visualization is still the correct target)
+                    const targetY = P_j.y;
+                    const targetX = isMirrorMode ? CANVAS_WIDTH - P_j.x : P_j.x + HALF_WIDTH;
+                    shapeToVisualize.push({ x: targetX, y: targetY });
+                    
+                } else {
+                    // Relative Target Position: Aligned with the best U_REF found.
+                    const P_REF = targetPoints[0];
+
+                    const relativeX = P_j.x - P_REF.x;
+                    const relativeY = P_j.y - P_REF.y;
+
+                    const visualRelativeX = isMirrorMode ? -relativeX : relativeX;
+
+                    shapeToVisualize.push({
+                        x: U_REF.x + visualRelativeX,
+                        y: U_REF.y + relativeY
+                    });
+                }
+            }
+            
+            // Overwrite userClicks with the ordered version so that 'draw()'
+            // draws the user lines in the correct order for review.
+            userClicks = orderedUserClicks;
+            
+            // --- End Error Calculation ---
+            
+            const meanSquaredError = totalErrorSquared / NUM_POINTS;
+            const averageDistanceError = Math.round(Math.sqrt(meanSquaredError));
+
+            results.push({ error: averageDistanceError, timestamp: Date.now() });
+            
+            updateOverallStats();
+            
+            // Pass the optimized shape to the draw() function for visualization.
+            window.shapeToVisualizeForDraw = shapeToVisualize;
+            
+            draw(); // Redraw to show the comparison
+            
+            delete window.shapeToVisualizeForDraw;
+        }
+
+        /**
+         * Calculates and updates the overall precision average and progress bar.
+         */
+        function updateOverallStats() {
+            const attempts = results.length;
+            
+            attemptsCountEl.textContent = `${attempts} Attempts`;
+
+            if (attempts === 0) {
+                averagePercentageEl.textContent = 'N/A';
+                progressBarFillEl.style.width = '0%';
+                progressBarFillEl.style.backgroundColor = '#fcd34d';    
+                return;
+            }
+
+            const totalError = results.reduce((sum, result) => sum + result.error, 0);
+            const overallAverageError = totalError / attempts;
+
+            // Normalize error into a precision percentage (0% at MAX_ERROR_TO_DISPLAY distance)
+            const precisionFraction = 1 - (Math.min(overallAverageError, MAX_ERROR_TO_DISPLAY) / MAX_ERROR_TO_DISPLAY);
+            const precisionPercentage = Math.round(precisionFraction * 100);
+
+            // Update DOM
+            averagePercentageEl.textContent = `${precisionPercentage}%`;
+            progressBarFillEl.style.width = `${precisionPercentage}%`;
+
+            // Color code the progress bar (better is greener)
+            let color;
+            if (precisionPercentage >= 90) color = '#10b981'; // emerald-500
+            else if (precisionPercentage >= 75) color = '#fcd34d'; // amber-300
+            else if (precisionPercentage >= 50) color = '#f97316'; // orange-500
+            else color = '#ef4444'; // red-500
+
+            progressBarFillEl.style.backgroundColor = color;
+        }
+
+        /**
+         * Starts a new round.
+         */
+        function startRound() {
+            // Read configuration from UI
+            NUM_POINTS = parseInt(numPointsSelect.value);
+            isMirrorMode = mirrorModeCheckbox.checked;
+            isAbsoluteMode = absoluteModeCheckbox.checked;
+            isMemoryMode = memoryModeCheckbox.checked;
+            
+            // Reset game state
+            userClicks = [];
+            isGameActive = true;
+            isTargetVisible = true;
+            isCopyAreaMasked = isMemoryMode;
+            
+            // Generate new target pattern on the left side
+            generateTargetPoints();
+
+            // Set button state
+            // startButton.disabled = true; // <-- REMOVED to allow skipping
+            startButton.textContent = 'Next Pattern';
+
+            // Start Memory Mode timers if active
+            if (isMemoryMode) {
+                // Timer to hide the target shape
+                setTimeout(() => {
+                    isTargetVisible = false;
+                    draw();
+                }, TARGET_VISIBILITY_MS);
+
+                // Timer to remove the copy area mask
+                setTimeout(() => {
+                    isCopyAreaMasked = false;
+                    draw();
+                }, COPY_AREA_MASK_MS);
+            }
+
+            draw();
+        }
+
+        // --- Event Listeners ---
+        startButton.addEventListener('click', startRound);
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent right click menu
+
+        // --- Modal/Lightbox Event Handlers ---
+        infoButton.addEventListener('click', () => {
+            infoModal.classList.remove('hidden');
+        });
+
+        closeModalButton.addEventListener('click', () => {
+            infoModal.classList.add('hidden');
+        });
+
+        infoModal.addEventListener('click', (e) => {
+            if (e.target === infoModal) {
+                infoModal.classList.add('hidden');
+            }
+        });
+        
+        zoomImageButton.addEventListener('click', (e) => {
+            e.preventDefault(); // Prevent default button action
+            imageLightbox.classList.remove('hidden');
+        });
+
+        imageLightbox.addEventListener('click', () => {
+            imageLightbox.classList.add('hidden');
+        });
+
+
+        // --- Initial Load ---
+        updateOverallStats();
+        draw(); // Draw the initial empty canvas
+    </script>
+</body>
+</html>
